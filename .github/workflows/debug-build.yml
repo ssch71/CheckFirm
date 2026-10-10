@@ -118,8 +118,12 @@ jobs:
       - name: Collect APKs
         run: |
           mkdir -p out
-          find . -path "*/build/outputs/apk/*/debug/*.apk" -exec cp {} out/ \;
+          find . -path "*/build/outputs/apk/*" -name "*.apk" -not -path "./out/*" -exec cp {} out/ \;
           ls -la out
+          if [ -z "$(ls out/*.apk 2>/dev/null)" ]; then
+            find . -path "*/build/outputs/*" -type f | head -50
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
