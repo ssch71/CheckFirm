@@ -50,6 +50,19 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
 
+      # 빌드 스크립트가 keystore.properties를 무조건 읽으므로
+      # 디버그 키스토어를 가리키는 더미 파일을 만들어 줌
+      - name: Create dummy keystore.properties
+        run: |
+          if [ ! -f keystore.properties ]; then
+            cat > keystore.properties <<EOF
+          storeFile=$HOME/.android/debug.keystore
+          storePassword=android
+          keyAlias=androiddebugkey
+          keyPassword=android
+          EOF
+          fi
+
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
