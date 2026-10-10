@@ -31,8 +31,6 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # 디버그 키스토어를 캐시해서 빌드마다 서명이 바뀌지 않게 함
-      # (서명이 바뀌면 기존 설치본 위에 업데이트 설치가 안 됨)
       - name: Restore debug keystore
         uses: actions/cache@v4
         with:
