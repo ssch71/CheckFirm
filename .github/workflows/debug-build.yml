@@ -31,6 +31,8 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # 디버그 키스토어를 캐시해서 빌드마다 서명이 바뀌지 않게 함
+      # (서명이 바뀌면 기존 설치본 위에 업데이트 설치가 안 됨)
       - name: Restore debug keystore
         uses: actions/cache@v4
         with:
@@ -48,8 +50,6 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
 
-      # 빌드 스크립트가 keystore.properties를 무조건 읽으므로
-      # 디버그 키스토어를 가리키는 더미 파일을 만들어 줌
       - name: Create dummy keystore.properties
         run: |
           if [ ! -f keystore.properties ]; then
@@ -60,6 +60,59 @@ jobs:
           keyPassword=android
           EOF
           fi
+
+      # Google Services 플러그인은 google-services.json이 없으면 빌드를 막음.
+      # GOOGLE_SERVICES_JSON 시크릿이 있으면 그걸 쓰고, 없으면 applicationId에 맞춘 더미 생성
+      # (더미면 빌드는 되지만 Firebase 기능은 실제로 동작하지 않음)
+      - name: Provide google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -f app/google-services.json ]; then
+            echo "app/google-services.json already exists"
+            exit 0
+          fi
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
+            echo "Using GOOGLE_SERVICES_JSON secret"
+            exit 0
+          fi
+
+          GRADLE_FILE=$(ls app/build.gradle.kts app/build.gradle 2>/dev/null | head -n1)
+          APP_ID=$(grep -oP 'applicationId\s*=?\s*"\K[^"]+' "$GRADLE_FILE" | head -n1)
+          SUFFIX=$(grep -oP 'applicationIdSuffix\s*=?\s*"\K[^"]+' "$GRADLE_FILE" | head -n1 || true)
+          if [ -z "$APP_ID" ]; then
+            echo "::error::applicationId를 $GRADLE_FILE 에서 찾지 못함"
+            exit 1
+          fi
+          echo "applicationId=$APP_ID suffix=$SUFFIX"
+
+          python3 - "$APP_ID" "$SUFFIX" > app/google-services.json <<'PY'
+          import json, sys
+          app_id, suffix = sys.argv[1], sys.argv[2]
+          pkgs = [app_id] + ([app_id + suffix] if suffix else [])
+          clients = []
+          for i, p in enumerate(pkgs):
+              clients.append({
+                  "client_info": {
+                      "mobilesdk_app_id": f"1:000000000000:android:{i:016x}",
+                      "android_client_info": {"package_name": p},
+                  },
+                  "oauth_client": [],
+                  "api_key": [{"current_key": "AIzaSyDummyKeyForCiBuildOnly000000000"}],
+                  "services": {"appinvite_service": {"other_platform_oauth_client": []}},
+              })
+          print(json.dumps({
+              "project_info": {
+                  "project_number": "000000000000",
+                  "project_id": "dummy-ci-project",
+                  "storage_bucket": "dummy-ci-project.appspot.com",
+              },
+              "client": clients,
+              "configuration_version": "1",
+          }, indent=2))
+          PY
+          cat app/google-services.json
 
       - name: Make gradlew executable
         run: chmod +x ./gradlew
